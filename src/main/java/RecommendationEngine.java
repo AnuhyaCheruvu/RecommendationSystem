@@ -5,15 +5,13 @@ import java.io.PrintWriter;
 import java.text.SimpleDateFormat;
 import java.util.*;
 
-import javafx.util.Pair;
+
 import org.apache.log4j.Level;
 import org.apache.log4j.Logger;
 import org.apache.spark.SparkConf;
-import org.apache.spark.api.java.JavaPairRDD;
 import org.apache.spark.api.java.JavaRDD;
 import org.apache.spark.api.java.JavaSparkContext;
 import org.apache.spark.api.java.function.Function;
-import org.apache.spark.api.java.function.PairFunction;
 import org.apache.spark.api.java.function.VoidFunction;
 import org.apache.spark.mllib.recommendation.ALS;
 import org.apache.spark.mllib.recommendation.MatrixFactorizationModel;
@@ -35,7 +33,7 @@ public class RecommendationEngine {
 
         // Read user-item rating file. format - userId,itemId,rating
         JavaRDD<String> transactionsFile = sc.textFile(args[0]);
-        
+
         JavaRDD<Transaction> transactions = transactionsFile.map(new Function<String, Transaction>() {
 
             public Transaction call(String s) throws Exception {
@@ -46,25 +44,25 @@ public class RecommendationEngine {
                 return transaction;
             }
         });
-        
+
         List<Transaction> transactionList = transactions.collect();
         Map<Long, Map<Long, Double>> userMap = new HashMap();
-        
+
         for(Transaction transaction : transactionList) {
             Long custId = transaction.getCustId();
             if (userMap.get(custId) == null) {
                 Map<Long, Double> vendorMap = new HashMap<Long, Double>();
-                vendorMap.put(transaction.getProductId(), (1.0d/(double)transactionList.size()) * 5.0d);
+                vendorMap.put(transaction.getProductId(), 1.0d);
                 userMap.put(custId, vendorMap);
             }
             else {
                 if (userMap.get(custId).get(transaction.getProductId()) == null) {
-                    Double rating = (1.0d/(double)transactionList.size()) * 5.0d;
+                    Double rating = 1.0d;
                     userMap.get(custId).put(transaction.getProductId(), rating);
                 }
                 else {
-                    Double count = userMap.get(custId).get(transaction.getProductId());
-                    Double rating = count + ((1.0d/(double)transactionList.size()) * 5.0d);
+                    Double current = userMap.get(custId).get(transaction.getProductId());
+                    Double rating = current + (1.0d);
                     userMap.get(custId).put(transaction.getProductId(), rating);
                 }
             }
@@ -82,7 +80,8 @@ public class RecommendationEngine {
                     sb.append(',');
                     sb.append(entry1.getKey());
                     sb.append(',');
-                    sb.append(entry1.getValue());
+                    Double rating = (entry1.getValue()/userMap.get(custId).size()) * 5.0d;
+                    sb.append(rating);
                     pw.println(sb.toString());
                 }
             }
@@ -103,12 +102,12 @@ public class RecommendationEngine {
         });
 
 //        // Build the recommendation model using ALS
-// 
+//
         int rank = 10; // 10 latent factors
         int numIterations = Integer.parseInt(args[1]); // number of iterations
 
-        
-        
+
+
         MatrixFactorizationModel model = ALS.trainImplicit(JavaRDD.toRDD(ratings),
                 rank, numIterations);
         //ALS.trainImplicit(arg0, arg1, arg2)
@@ -131,8 +130,18 @@ public class RecommendationEngine {
 
         }, false, 1);
 
+        final Long reqCustId = Long.parseLong(args[2]);
+
         // Get top 10 recommendations
         //JavaRDD<Rating> topRecomondations = sc.parallelize(recomondations.take(1));
+        System.out.println("Top recommendations for user " + reqCustId + " :");
+        recomondations.foreach(new VoidFunction<Rating>() {
+            public void call(Rating rating) throws Exception {
+                if (rating.user() == reqCustId) {
+                    System.out.println(rating.product());
+                }
+            }
+        });
 
         try {
             PrintWriter pw = new PrintWriter(new File("reco.csv"));
@@ -150,7 +159,7 @@ public class RecommendationEngine {
         } catch (Exception e) {
             e.printStackTrace();
         }
-        
+
         System.out.print("DONE!!!!");
 
     }
