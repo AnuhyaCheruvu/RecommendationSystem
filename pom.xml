@@ -27,37 +27,50 @@
             <version>1.5.2</version>
         </dependency>
         <dependency>
-    <groupId>com.zenjava</groupId>
-    <artifactId>javafx-maven-plugin</artifactId>
-    <version>1.5</version>
-</dependency>
+            <groupId>com.zenjava</groupId>
+            <artifactId>javafx-maven-plugin</artifactId>
+            <version>1.5</version>
+        </dependency>
+<!--
+                <dependency>
+                    <groupId>com.oracle</groupId>
+                    <artifactId>ojdbc7</artifactId>
+                    <version>12.1.0</version>
+                </dependency>
+-->
+        <dependency>
+            <groupId>mysql</groupId>
+            <artifactId>mysql-connector-java</artifactId>
+            <version>5.1.17</version>
+        </dependency>
 
     </dependencies>
 
-<!--<build>-->
-    <!--<plugins>-->
-      <!--<plugin>-->
-        <!--<artifactId>maven-assembly-plugin</artifactId>-->
-        <!--<executions>-->
-          <!--<execution>-->
-            <!--<phase>package</phase>-->
-            <!--<goals>-->
-              <!--<goal>single</goal>-->
-            <!--</goals>-->
-          <!--</execution>-->
-        <!--</executions>-->
-        <!--<configuration>-->
-          <!--<descriptorRefs>-->
-            <!--<descriptorRef>jar-with-dependencies</descriptorRef>-->
-          <!--</descriptorRefs>-->
-          <!--<archive>-->
-            <!--<manifest>-->
-              <!--<mainClass>RecommendationEngine</mainClass>    // put your main class here.-->
-            <!--</manifest>-->
-          <!--</archive>-->
-        <!--</configuration>-->
-      <!--</plugin>-->
-    <!--</plugins>-->
-  <!--</build>-->
+    <build>
+        <plugins>
+            <plugin>
+                <artifactId>maven-assembly-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>single</goal>
+                        </goals>
+                    </execution>
+                </executions>
+                <configuration>
+                    <descriptorRefs>
+                        <descriptorRef>jar-with-dependencies</descriptorRef>
+                    </descriptorRefs>
+                    <archive>
+                        <manifest>
+                            <mainClass>RecommendationEngine</mainClass>
+                            // put your main class here.
+                        </manifest>
+                    </archive>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
 
 </project>
