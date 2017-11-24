@@ -29,7 +29,8 @@ import scala.Tuple2;
 
 public class RecommendationEngine {
 
-    private static final String s = "10";
+    private static int[] ranks = new int[]{8, 10, 12};
+    private static final int number_iterations = 10;
     private static final String pattern = "MM/dd/yyyy";
     private static final String DELIMETER = ",";
 
@@ -45,21 +46,21 @@ public class RecommendationEngine {
         Logger.getLogger("akka").setLevel(Level.OFF);
 
         // Create Java spark context
-        SparkConf conf = new SparkConf().setAppName("Collaborative Filtering Example");
+        SparkConf conf = new SparkConf().setAppName("Offers Recommendation Engine");
         JavaSparkContext sc = new JavaSparkContext(conf);
 
         // Read user-item rating file. format - userId,itemId,rating
         JavaRDD<String> transactionsFile = sc.textFile(args[0]);
 
-        JavaRDD<String> itemDescritpionFile = sc.textFile(args[1]);
+        JavaRDD<String> itemDescriptionFile = sc.textFile(args[1]);
 
         JavaRDD<Transaction> transactions = transactionsFile.map(new Function<String, Transaction>() {
 
             public Transaction call(String s) throws Exception {
                 String[] sarray = s.split(DELIMETER);
-                String[] dateStrings = sarray[6].split(" ");
+                String[] dateStrings = sarray[9].split(" ");
                 Date date1 = new SimpleDateFormat(pattern).parse(dateStrings[0]);
-                Transaction transaction = new Transaction(Long.parseLong(sarray[0]), sarray[1], sarray[2], sarray[3], Double.parseDouble(sarray[4]), sarray[5], date1, Long.parseLong(sarray[7]), sarray[8]);
+                Transaction transaction = new Transaction(Long.parseLong(sarray[0]), sarray[4], sarray[5], sarray[6], Double.parseDouble(sarray[7]), sarray[8], date1, Long.parseLong(sarray[12]), sarray[11]);
                 return transaction;
             }
         });
@@ -70,7 +71,7 @@ public class RecommendationEngine {
         for (Transaction transaction : transactionList) {
             Long custId = transaction.getCustId();
             if (userMap.get(custId) == null) {
-                Map<Long, Double> vendorMap = new HashMap<Long, Double>();
+                Map<Long, Double> vendorMap = new HashMap<>();
                 vendorMap.put(transaction.getProductId(), 1.0d);
                 userMap.put(custId, vendorMap);
             } else {
@@ -118,25 +119,52 @@ public class RecommendationEngine {
 
 
         // Create tuples(itemId,ItemDescription), will be used later to get names of item from itemId
-        JavaPairRDD<Integer, String> itemDescritpion = itemDescritpionFile.mapToPair(
+        JavaPairRDD<Integer, String> itemDescritpion = itemDescriptionFile.mapToPair(
                 new PairFunction<String, Integer, String>() {
                     public Tuple2<Integer, String> call(String t) throws Exception {
                         String[] s = t.split(",");
-                        return new Tuple2<Integer, String>(Integer.parseInt(s[0]), s[1]);
+                        return new Tuple2<>(Integer.parseInt(s[0]), s[1]);
                     }
                 });
 
-//        // Build the recommendation model using ALS
-//
-        int rank = 10; // 10 latent factors
-        int numIterations = Integer.parseInt(s); // number of iterations
+        int rank_selected = 0; // 10 latent factors
+        JavaRDD<Rating>[] dataSets = ratings.randomSplit(new double[]{9.5d, 0.5d}, 0l);
+        JavaRDD<Rating> trainingDataSet = dataSets[0];
+        JavaRDD<Rating> validationDataSet = dataSets[1];
 
+        double min_error = Double.MAX_VALUE;
+        for (int rank : ranks) {
+            MatrixFactorizationModel model = ALS.trainImplicit(JavaRDD.toRDD(trainingDataSet),
+                    rank, number_iterations);
+
+            JavaRDD<Tuple2<Object, Object>> validation_for_predict = validationDataSet.map(new Function<Rating, Tuple2<Object, Object>>() {
+                @Override
+                public Tuple2<Object, Object> call(Rating rating) throws Exception {
+                    return new Tuple2<>(rating.user(), rating.product());
+                }
+            });
+
+            JavaPairRDD<Tuple2<Integer, Integer>, Double> predictions = JavaPairRDD.fromJavaRDD(
+                    model.predict(JavaRDD.toRDD(validation_for_predict)).toJavaRDD()
+                            .map(r -> new Tuple2<>(new Tuple2<>(r.user(), r.product()), r.rating()))
+            );
+            JavaRDD<Tuple2<Double, Double>> ratesAndPreds = JavaPairRDD.fromJavaRDD(
+                    validationDataSet.map(r -> new Tuple2<>(new Tuple2<>(r.user(), r.product()), r.rating())))
+                    .join(predictions).values();
+            double mse = ratesAndPreds.mapToDouble(pair -> {
+                double err = pair._2() - pair._1();
+                return err * err;
+            }).mean();
+            if (mse < min_error) {
+                rank_selected = rank;
+                min_error = mse;
+            }
+        }
 
         MatrixFactorizationModel model = ALS.trainImplicit(JavaRDD.toRDD(ratings),
-                rank, numIterations);
-//
+                rank_selected, number_iterations);
 
-//        // Create user-item tuples from ratings
+       // Create user-item tuples from ratings
         JavaRDD<Tuple2<Object, Object>> userProducts = ratings
                 .map(new Function<Rating, Tuple2<Object, Object>>() {
                     public Tuple2<Object, Object> call(Rating r) {
@@ -157,7 +185,6 @@ public class RecommendationEngine {
                 return (Integer) v1._2;
             }
         });
-
         for (int index = 2; index < args.length; index++) {
 
             final Integer reqUserId = Integer.parseInt(args[index]);
@@ -169,7 +196,6 @@ public class RecommendationEngine {
                             return new Tuple2<Object, Object>(reqUserId, r);
                         }
                     });
-            System.out.println(itemsNotRatedByUser.collect().toString());
             JavaRDD<Rating> recomondations = model.predict(itemsNotRatedByUser.rdd()).toJavaRDD().distinct();
             recomondations = recomondations.sortBy(new Function<Rating, Double>() {
                 public Double call(Rating v1) throws Exception {
@@ -193,7 +219,6 @@ public class RecommendationEngine {
                 pw = new PrintWriter(new File("reco.csv"));
                 recommendedItems.foreach(new VoidFunction<Tuple2<Rating, String>>() {
                     public void call(Tuple2<Rating, String> t) throws Exception {
-                        System.out.println(t._1.user() + "\t" + t._1.rating() + "\t" + t._2);
                         UpdateNewOffers(t._1.user(), t._2, t._1.rating());
                     }
                 });
@@ -217,12 +242,12 @@ public class RecommendationEngine {
             }*/
         }
 
-        //JavaRDD<Rating> topRecomondations = sc.parallelize(recomondations.take(1));
 
 
         System.out.print("Successfull");
 
     }
+
 
 
     private synchronized static void DeleteExistingOffers(int userID) {
@@ -238,7 +263,6 @@ public class RecommendationEngine {
             String delete_sql_statement = "DELETE from  recommendations " + "where  UserID=?";
             PreparedStatement preparedStatement = conn.prepareStatement(delete_sql_statement);
             preparedStatement.setInt(1, userID);
-            System.out.println(preparedStatement);
             preparedStatement.executeUpdate();
 
         } catch (ClassNotFoundException e) {
